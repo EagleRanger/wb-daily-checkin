@@ -1,81 +1,52 @@
 ---
 name: wb-daily-checkin
-description: 使用本机 WorkBuddy 日志中的现有登录态，通过后台 HTTP 请求领取每日签到积分，不移动鼠标或依赖界面坐标。用于用户要求领取或自动领取 WorkBuddy 每日积分、配置 WorkBuddy 加油站签到、daily checkin，或要求以不抢鼠标的方式完成签到时。仅可用于用户本人的本机账号；不得输出、上传或记录完整 JWT。
+description: 在 Windows 本机通过用户自行校准的 WorkBuddy 界面坐标执行每日签到积分领取。用于用户要求配置、校准、试跑或执行 WorkBuddy 签到自动化；不得直接复用其他机器的坐标，也不得把点击序列完成当作签到结果已验证。
 ---
 
-# wb-daily-checkin — WorkBuddy 每日积分自动领取
+# WorkBuddy 每日签到（界面坐标版）
 
-## 功能
+## 当前路线
 
-通过 WorkBuddy 内部 API 自动领取每日签到积分（Buddy 加油站），全程后台 HTTP 请求，不移动鼠标、不占用界面、不依赖分辨率/DPI。
+WorkBuddy 更新后，旧版内部 API/JWT 路线已失效。当前版本只通过本地桌面界面完成四步点击：头像、签到领积分、签到按钮、关闭弹窗。不要调用旧版 `claim_wb_points_api.py`，也不要搜索、读取或上传 WorkBuddy JWT。
 
-## 原理（已逆向 app.asar 并实机验证）
+## 运行前置
 
-| 用途 | 接口 | 方法 |
-|---|---|---|
-| 查签到状态 | `https://copilot.tencent.com/v2/billing/meter/checkin-activity-status` | POST |
-| 领取积分 | `https://copilot.tencent.com/v2/billing/meter/daily-checkin` | POST |
-| v1 兜底领取 | `https://copilot.tencent.com/billing/meter/daily-checkin` | POST |
+- 仅操作用户本人已登录的 Windows 本机 WorkBuddy。
+- 真实点击会移动鼠标、切换前台窗口并产生账号侧效果。只在用户已明确要求执行签到，或有效的定时任务已明确授权时运行真实点击。
+- 确认 Python 3.8+ 可用，并从 Skill 根目录执行 `python -m pip install -r requirements.txt`。
+- 不得携带或发布 `wb_points_config.json`、`claim_ui.log`、`calibrate_debug.log` 或 `calibrate_error.log`。
 
-鉴权头（来自前端 `buildHeaders(session)`）：
-- `Authorization: Bearer <JWT>`
-- `X-User-Id: <sub>` （JWT payload 的 sub 字段）
-- `X-Domain: copilot.tencent.com`
-- `Accept / Content-Type: application/json`
+## 首次配置
 
-JWT 来源：WorkBuddy 运行日志目录（`%APPDATA%\WorkBuddy\logs` 下的 `.log` 文件），Keycloak 签发，有效期约 1 年。
+1. 让用户打开并登录 WorkBuddy，选定以后定时执行时使用的屏幕、分辨率、Windows 缩放比例和窗口大小。
+2. 运行 `校准.bat` 或 `python -u scripts/calibrate_wb_points.py`。
+3. 校准脚本启动后，请用户手动完成四步点击，期间不要点击其他位置；完成后将鼠标静置 3 秒。
+4. 读回 `scripts/wb_points_config.json`：必须包含 `avatar`、`checkin_menu`、`checkin_btn`、`close_popup`，每个点都是两个 0–1 之间的数值。任何额外点击、顺序错误、缺点或越界都应重新校准，不应手猜修改。
+5. 运行 `python scripts/claim_wb_points.py --dry`。这只验证配置能被读取并计算当前窗口坐标，不会点击，也不证明按钮对齐。
+6. 首次真实试跑必须由用户在场观察。确认四步均点中正确控件，并从 WorkBuddy 页面确认当日状态或积分变化后，才能把这台机器的配置标记为可用。
 
-每日刷新时间：**北京时间 00:00**（Asia/Shanghai 自然日翻面）。依据：状态接口 `checkin_dates` 返回北京日历日期，asar 全量使用 `Asia/Shanghai / UTC+8`，含 `setHours(0,0,0,0)` 零点归一化逻辑。
+## 坐标重校准规则
 
-## 前置条件
+相对比例只是减少窗口移动和等比缩放的影响，不是界面识别。遇到以下任一情况，停止真实点击并重新校准：
 
-1. 本机已安装 WorkBuddy 桌面客户端并至少登录过一次（产生日志文件含 JWT）。
-2. 本机网络可访问 `copilot.tencent.com`（HTTPS 443）。
-3. Python 3.8+（仅用标准库，无需 pip install）。
+- 另一台电脑或另一个 Windows 用户；
+- 分辨率、显示缩放、主显示器、WorkBuddy 界面缩放或窗口常用尺寸改变；
+- WorkBuddy 版本、菜单、弹窗、语言、主题或侧边栏状态变化；
+- 打印的坐标与目标控件不再对齐，或一次试跑发生误点。
 
-## 使用方法
+定时执行时保持与校准时相同的常用窗口状态，并确保桌面未锁定、远程桌面未断开且执行期间无人操作鼠标。
 
-### 手动执行
+## 每日执行与验收
 
-```bash
-python scripts/claim_wb_points_api.py
-```
+执行 `python scripts/claim_wb_points.py`。
 
-退出码：
-- `0`：成功（领取成功 / 今日已签到 / 活动未开启自动跳过）
-- `1`：领取接口异常
-- `2`：JWT 未找到或已过期（需重新登录 WorkBuddy）
+- 无配置、缺少坐标、找不到 WorkBuddy 窗口或启动失败时，本次应停止并报告，不得猜测默认坐标。
+- 退出码 `0` 只表示点击序列执行完毕。脚本没有视觉识别或服务端状态校验，因此不能据此声称签到成功。
+- 在定时任务中保留 `scripts/claim_ui.log`，用于区分未启动、未找到窗口、坐标序列已执行和尚未验证签到结果。
 
-### 配合 WorkBuddy 自动化
+## 文件
 
-创建 recurring automation，每天 08:00 执行：
-```
-python scripts/claim_wb_points_api.py
-```
-08:00 在 00:00 刷新之后，可验证刷新机制是否生效。
-
-### 调研刷新时间（可选）
-
-```bash
-python scripts/investigate_reset.py
-```
-输出完整的签到状态 JSON 和时区信息，用于确认刷新机制。
-
-## 脚本行为
-
-1. 扫描 `%APPDATA%\WorkBuddy\logs` 下所有 `.log` 文件，提取最新 JWT。
-2. 解码 JWT 验证未过期，取出 `sub` 作为 `X-User-Id`。
-3. 调 v2 状态接口：
-   - `active=false` → 活动未开启，跳过（退出码 0）。
-   - `today_checked_in=true` → 今日已签，跳过（退出码 0）。
-4. 调 v2 领取接口（v1 兜底）：
-   - `code=0` → 领取成功。
-   - `msg` 含"已签到" → 服务端防重，跳过。
-5. 写日志到 `scripts/claim_api.log`。
-
-## 注意事项
-
-- JWT 过期后脚本会明确报错（退出码 2），不会静默失败。届时需重新打开 WorkBuddy 登录一次以刷新日志。
-- `www.codebuddy.cn` 域名在本机会被服务器重置（WinError 10054），唯一可用 API 域是 `copilot.tencent.com`。
-- 活动有周期性（如 2026-08-06 ~ 2026-08-13），结束后若官方不开新一期，`active=false` 时脚本自动跳过。
-- 脚本幂等：服务端有每日一次防重，多次调用安全。
+- `scripts/calibrate_wb_points.py`：监控鼠标点击并生成本机坐标配置。
+- `scripts/claim_wb_points.py`：置前 WorkBuddy 并执行四步点击。
+- `校准.bat`：Windows 双击校准入口。
+- `requirements.txt`：Python 依赖。

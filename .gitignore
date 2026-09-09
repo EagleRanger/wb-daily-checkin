@@ -1,3 +1,7 @@
 __pycache__/
 *.py[cod]
+wb_points_config.json
+claim_ui.log
+calibrate_debug.log
+calibrate_error.log
 claim_api.log

@@ -1,6 +1,6 @@
 interface:
   display_name: "WorkBuddy 每日签到"
-  short_description: "后台领取每日积分，不移动鼠标或依赖界面坐标"
-  default_prompt: "请使用 $wb-daily-checkin 检查并领取我本机 WorkBuddy 账号的今日签到积分。"
+  short_description: "本机校准界面坐标后执行 WorkBuddy 签到"
+  default_prompt: "请使用 $wb-daily-checkin 先检查本机校准和窗口条件，再按我的授权试跑或执行 WorkBuddy 签到。"
 policy:
   allow_implicit_invocation: true
